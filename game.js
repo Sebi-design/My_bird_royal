@@ -643,6 +643,34 @@ class SoundFX {
     if (this.music) this.music.setIntensity(level);
   }
 
+  // Majestic Royal Hero Select Fanfare Chime
+  playHeroSelect() {
+    if (this.muted) return;
+    this.ensureContext();
+    if (!this.ctx) return;
+    try {
+      const now = this.ctx.currentTime;
+      [523.25, 659.25, 783.99, 1046.50].forEach((freq, idx) => {
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        const delay = idx * 0.055;
+
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(freq, now + delay);
+
+        gain.gain.setValueAtTime(0.24, now + delay);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + delay + 0.28);
+
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+
+        osc.onended = () => { try { osc.disconnect(); gain.disconnect(); } catch (e) {} };
+        osc.start(now + delay);
+        osc.stop(now + delay + 0.30);
+      });
+    } catch (e) {}
+  }
+
   // Tree jump / spring takeoff sound!
   playTakeoff() {
     if (this.muted) return;
@@ -1301,7 +1329,8 @@ class FlyBirdGame {
       angle: 0,
       wingTimer: 0,
       blinkTimer: 0,
-      isBlinking: false
+      isBlinking: false,
+      skin: localStorage.getItem('flybird_skin') || 'blue'
     };
 
     this.pipes = [];
@@ -1319,6 +1348,7 @@ class FlyBirdGame {
     this.setupResolution();
     this.bindEvents();
     this.updateHUD();
+    this.updateHeroPickerUI();
 
     this.lastTime = performance.now();
     requestAnimationFrame((t) => this.loop(t));
@@ -1379,7 +1409,7 @@ class FlyBirdGame {
       if (now - this.lastActionTimestamp < 60) return;
       this.lastActionTimestamp = now;
 
-      if (e && e.target && (e.target.closest('#mute-btn') || e.target.closest('#pause-btn'))) {
+      if (e && e.target && (e.target.closest('#mute-btn') || e.target.closest('#pause-btn') || e.target.closest('.hero-card-btn') || e.target.closest('.royal-hero-picker'))) {
         return;
       }
 
@@ -1421,6 +1451,29 @@ class FlyBirdGame {
         this.toggleMute();
       }
     });
+
+    // Royal Hero Picker Buttons (Blue Prince vs Red King)
+    const btnBlue = document.getElementById('hero-btn-blue');
+    if (btnBlue) {
+      const pickBlue = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this.setBirdSkin('blue');
+      };
+      btnBlue.addEventListener('touchstart', pickBlue, { passive: false });
+      btnBlue.addEventListener('click', pickBlue);
+    }
+
+    const btnRed = document.getElementById('hero-btn-red');
+    if (btnRed) {
+      const pickRed = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this.setBirdSkin('red');
+      };
+      btnRed.addEventListener('touchstart', pickRed, { passive: false });
+      btnRed.addEventListener('click', pickRed);
+    }
 
     // Interactive Buttons
     const tapBtn = document.getElementById('tap-to-fly-btn');
@@ -1478,6 +1531,43 @@ class FlyBirdGame {
     });
 
     this.updateMuteIcon();
+  }
+
+  setBirdSkin(skin) {
+    if (skin !== 'blue' && skin !== 'red') return;
+    this.bird.skin = skin;
+    localStorage.setItem('flybird_skin', skin);
+    this.updateHeroPickerUI();
+    this.sound.playHeroSelect();
+
+    // Celebration burst of royal sparkles around nest when changing heroes!
+    if (this.state === 'START') {
+      const colors = (skin === 'red')
+        ? ['#ff1744', '#ffd700', '#ff8a80', '#ffffff']
+        : ['#2196f3', '#ffd700', '#90caf9', '#ffffff'];
+      for (let i = 0; i < 16; i++) {
+        const angle = (Math.PI * 2 * i) / 16 + Math.random() * 0.2;
+        const speed = 2.0 + Math.random() * 3.5;
+        this.particles.spawn(
+          this.bird.x + (Math.random() - 0.5) * 12,
+          this.bird.y + (Math.random() - 0.5) * 12,
+          Math.cos(angle) * speed,
+          Math.sin(angle) * speed,
+          3.5 + Math.random() * 3.5,
+          colors[Math.floor(Math.random() * colors.length)],
+          26,
+          'sparkle'
+        );
+      }
+    }
+  }
+
+  updateHeroPickerUI() {
+    const currentSkin = this.bird ? (this.bird.skin || 'blue') : 'blue';
+    const btnBlue = document.getElementById('hero-btn-blue');
+    const btnRed = document.getElementById('hero-btn-red');
+    if (btnBlue) btnBlue.classList.toggle('active', currentSkin === 'blue');
+    if (btnRed) btnRed.classList.toggle('active', currentSkin === 'red');
   }
 
   toggleMute() {
@@ -1614,6 +1704,7 @@ class FlyBirdGame {
     this.gameoverScreen.classList.remove('active');
     this.pauseScreen.classList.remove('active');
     this.updateHUD();
+    this.updateHeroPickerUI();
   }
 
   triggerCombo(streak) {
@@ -2014,14 +2105,18 @@ class FlyBirdGame {
   }
 
   spawnFeathers() {
+    const isRedKing = (this.bird.skin === 'red');
     for (let i = 0; i < 4; i++) {
+      const col = isRedKing 
+        ? (Math.random() < 0.65 ? '#ff5252' : '#ffe082') 
+        : (Math.random() < 0.65 ? '#90caf9' : '#ffffff');
       this.particles.spawn(
         this.bird.x - 18 + Math.random() * 8,
         this.bird.y + 4 + Math.random() * 8,
         -2.0 - Math.random() * 2,
         (Math.random() - 0.5) * 2.5,
         3.5 + Math.random() * 3,
-        '#ffffff',
+        col,
         20,
         'feather'
       );
@@ -3509,6 +3604,7 @@ class FlyBirdGame {
   // ==========================================
   drawRoyalBird(ctx) {
     const b = this.bird;
+    const isRedKing = (b.skin === 'red');
 
     // Blink when invulnerable after shield break
     if (this.invulnerableTimer > 0 && Math.floor(this.frame / 4) % 2 === 0) {
@@ -3522,7 +3618,9 @@ class FlyBirdGame {
         ctx.translate(b.x + gx, b.y);
         ctx.rotate(b.angle);
         ctx.globalAlpha = 0.22 + idx * 0.18;
-        ctx.fillStyle = idx === 0 ? '#00e5ff' : '#ffd700';
+        ctx.fillStyle = idx === 0 
+          ? (isRedKing ? '#ff1744' : '#00e5ff') 
+          : '#ffd700';
         ctx.beginPath();
         ctx.ellipse(0, 0, 26, 22, 0, 0, Math.PI * 2);
         ctx.fill();
@@ -3541,10 +3639,17 @@ class FlyBirdGame {
       ctx.scale(sonicPulse, sonicPulse);
 
       const auraGrad = ctx.createRadialGradient(0, 0, 20, 0, 0, 42);
-      auraGrad.addColorStop(0, 'rgba(255, 215, 0, 0.25)');
-      auraGrad.addColorStop(0.5, 'rgba(0, 229, 255, 0.35)');
-      auraGrad.addColorStop(0.85, 'rgba(255, 255, 255, 0.65)');
-      auraGrad.addColorStop(1, 'rgba(0, 229, 255, 0)');
+      if (isRedKing) {
+        auraGrad.addColorStop(0, 'rgba(255, 23, 68, 0.35)');
+        auraGrad.addColorStop(0.5, 'rgba(255, 215, 0, 0.45)');
+        auraGrad.addColorStop(0.85, 'rgba(255, 255, 255, 0.65)');
+        auraGrad.addColorStop(1, 'rgba(255, 23, 68, 0)');
+      } else {
+        auraGrad.addColorStop(0, 'rgba(255, 215, 0, 0.25)');
+        auraGrad.addColorStop(0.5, 'rgba(0, 229, 255, 0.35)');
+        auraGrad.addColorStop(0.85, 'rgba(255, 255, 255, 0.65)');
+        auraGrad.addColorStop(1, 'rgba(0, 229, 255, 0)');
+      }
 
       ctx.fillStyle = auraGrad;
       ctx.beginPath();
@@ -3552,7 +3657,7 @@ class FlyBirdGame {
       ctx.fill();
 
       // Electric spark arcs
-      ctx.strokeStyle = '#fff9c4';
+      ctx.strokeStyle = isRedKing ? '#ffeb3b' : '#fff9c4';
       ctx.lineWidth = 2.0;
       for (let s = 0; s < 3; s++) {
         const sparkAng = (this.frame * 0.2 + s * 2.1) % (Math.PI * 2);
@@ -3571,16 +3676,22 @@ class FlyBirdGame {
       ctx.scale(pulse, pulse);
 
       const shieldGrad = ctx.createRadialGradient(0, 0, 20, 0, 0, 36);
-      shieldGrad.addColorStop(0, 'rgba(33, 150, 243, 0.15)');
-      shieldGrad.addColorStop(0.8, 'rgba(66, 165, 245, 0.45)');
-      shieldGrad.addColorStop(1, 'rgba(187, 222, 251, 0.75)');
+      if (isRedKing) {
+        shieldGrad.addColorStop(0, 'rgba(255, 152, 0, 0.18)');
+        shieldGrad.addColorStop(0.8, 'rgba(255, 87, 34, 0.45)');
+        shieldGrad.addColorStop(1, 'rgba(255, 224, 178, 0.75)');
+      } else {
+        shieldGrad.addColorStop(0, 'rgba(33, 150, 243, 0.15)');
+        shieldGrad.addColorStop(0.8, 'rgba(66, 165, 245, 0.45)');
+        shieldGrad.addColorStop(1, 'rgba(187, 222, 251, 0.75)');
+      }
 
       ctx.fillStyle = shieldGrad;
       ctx.beginPath();
       ctx.arc(0, 0, 35, 0, Math.PI * 2);
       ctx.fill();
 
-      ctx.strokeStyle = '#e3f2fd';
+      ctx.strokeStyle = isRedKing ? '#ffe0b2' : '#e3f2fd';
       ctx.lineWidth = 2.4;
       ctx.stroke();
       ctx.restore();
@@ -3601,10 +3712,14 @@ class FlyBirdGame {
     }
 
     // 4. ELEGANT TAIL PLUMAGE (3 Dynamic Layered Fan Feathers at Rear)
-    const tailFeathers = [
-      { angle: -0.32, length: 14, width: 6.2, x: -22, y: -2, col: '#1565c0' },
-      { angle: -0.05, length: 16, width: 6.8, x: -23, y: 5, col: '#1976d2' },
-      { angle: 0.22, length: 13, width: 5.8, x: -21, y: 12, col: '#0d47a1' }
+    const tailFeathers = isRedKing ? [
+      { angle: -0.32, length: 15, width: 6.4, x: -22, y: -2, col: '#d50000', tipCol: '#ffe082' },
+      { angle: -0.05, length: 17, width: 7.0, x: -23, y: 5, col: '#ff1744', tipCol: '#ffd54f' },
+      { angle: 0.22, length: 14, width: 6.0, x: -21, y: 12, col: '#b71c1c', tipCol: '#ffca28' }
+    ] : [
+      { angle: -0.32, length: 14, width: 6.2, x: -22, y: -2, col: '#1565c0', tipCol: '#64b5f6' },
+      { angle: -0.05, length: 16, width: 6.8, x: -23, y: 5, col: '#1976d2', tipCol: '#64b5f6' },
+      { angle: 0.22, length: 13, width: 5.8, x: -21, y: 12, col: '#0d47a1', tipCol: '#bbdefb' }
     ];
 
     tailFeathers.forEach((tf) => {
@@ -3615,14 +3730,14 @@ class FlyBirdGame {
       ctx.beginPath();
       ctx.ellipse(-tf.length / 2, 0, tf.length / 2, tf.width / 2, 0, 0, Math.PI * 2);
       const tfGrad = ctx.createLinearGradient(-tf.length, 0, 0, 0);
-      tfGrad.addColorStop(0, '#0a2a5e');
+      tfGrad.addColorStop(0, isRedKing ? '#3b0505' : '#0a2a5e');
       tfGrad.addColorStop(0.4, tf.col);
-      tfGrad.addColorStop(0.85, '#64b5f6');
-      tfGrad.addColorStop(1, '#bbdefb');
+      tfGrad.addColorStop(0.85, tf.tipCol);
+      tfGrad.addColorStop(1, '#ffffff');
       ctx.fillStyle = tfGrad;
       ctx.fill();
       ctx.lineWidth = 2.4;
-      ctx.strokeStyle = '#061a38';
+      ctx.strokeStyle = isRedKing ? '#2b0202' : '#061a38';
       ctx.stroke();
 
       // Delicate feather spine highlight
@@ -3638,8 +3753,8 @@ class FlyBirdGame {
 
     // 5. REGAL HEAD CREST TUFT (Flowing back from behind crown)
     ctx.save();
-    ctx.fillStyle = '#1976d2';
-    ctx.strokeStyle = '#061a38';
+    ctx.fillStyle = isRedKing ? '#d50000' : '#1976d2';
+    ctx.strokeStyle = isRedKing ? '#2b0202' : '#061a38';
     ctx.lineWidth = 2.2;
     // Primary tuft feather
     ctx.beginPath();
@@ -3650,7 +3765,7 @@ class FlyBirdGame {
     ctx.fill();
     ctx.stroke();
     // Inner feather highlight
-    ctx.fillStyle = '#64b5f6';
+    ctx.fillStyle = isRedKing ? '#ffc107' : '#64b5f6';
     ctx.beginPath();
     ctx.moveTo(-8, -16);
     ctx.quadraticCurveTo(-14, -22, -18, -20);
@@ -3686,24 +3801,31 @@ class FlyBirdGame {
     ctx.closePath();
 
     const bodyGrad = ctx.createRadialGradient(-3, -7, 4, 1, 3, 26);
-    bodyGrad.addColorStop(0, '#90caf9');
-    bodyGrad.addColorStop(0.3, '#2196f3');
-    bodyGrad.addColorStop(0.68, '#1565c0');
-    bodyGrad.addColorStop(1, '#092d62');
+    if (isRedKing) {
+      bodyGrad.addColorStop(0, '#ff8a80');    // Radiant ruby highlights
+      bodyGrad.addColorStop(0.3, '#ff1744');  // Vibrant royal scarlet
+      bodyGrad.addColorStop(0.68, '#d50000'); // Deep imperial crimson
+      bodyGrad.addColorStop(1, '#420303');    // Deep velvet burgundy shadow
+    } else {
+      bodyGrad.addColorStop(0, '#90caf9');
+      bodyGrad.addColorStop(0.3, '#2196f3');
+      bodyGrad.addColorStop(0.68, '#1565c0');
+      bodyGrad.addColorStop(1, '#092d62');
+    }
     ctx.fillStyle = bodyGrad;
     ctx.fill();
     ctx.lineWidth = 2.8;
-    ctx.strokeStyle = '#061a38';
+    ctx.strokeStyle = isRedKing ? '#2b0202' : '#061a38';
     ctx.lineJoin = 'round';
     ctx.stroke();
 
     // Soft specular rim gloss on forehead & shoulder
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.38)';
+    ctx.fillStyle = isRedKing ? 'rgba(255, 235, 238, 0.42)' : 'rgba(255, 255, 255, 0.38)';
     ctx.beginPath();
     ctx.ellipse(-2, -12, 10, 4.2, -0.2, 0, Math.PI * 2);
     ctx.fill();
 
-    // 8. FLUFFY PORCELAIN-WHITE BREAST & DOWNY BELLY
+    // 8. FLUFFY PORCELAIN-WHITE / GOLDEN ERMINE BREAST & DOWNY BELLY
     // Beautifully hugs the front curve of the chest and abdomen
     ctx.beginPath();
     ctx.moveTo(12, 2);
@@ -3713,14 +3835,22 @@ class FlyBirdGame {
     ctx.closePath();
 
     const bellyGrad = ctx.createLinearGradient(4, 1, 8, 20);
-    bellyGrad.addColorStop(0, '#ffffff');
-    bellyGrad.addColorStop(0.6, '#f3f8fd');
-    bellyGrad.addColorStop(1, '#d0e5f7');
+    if (isRedKing) {
+      // Royal Imperial Ermine Golden Cream
+      bellyGrad.addColorStop(0, '#ffffff');
+      bellyGrad.addColorStop(0.55, '#fff8e1');
+      bellyGrad.addColorStop(1, '#ffe082');
+    } else {
+      // Porcelain White & soft sky cream
+      bellyGrad.addColorStop(0, '#ffffff');
+      bellyGrad.addColorStop(0.6, '#f3f8fd');
+      bellyGrad.addColorStop(1, '#d0e5f7');
+    }
     ctx.fillStyle = bellyGrad;
     ctx.fill();
 
     // Fluffy down feather scallop accents
-    ctx.strokeStyle = 'rgba(144, 202, 249, 0.7)';
+    ctx.strokeStyle = isRedKing ? 'rgba(255, 193, 7, 0.75)' : 'rgba(144, 202, 249, 0.7)';
     ctx.lineWidth = 1.6;
     ctx.beginPath();
     ctx.arc(6, 12, 4.5, 0.15, Math.PI * 0.82);
@@ -3737,8 +3867,8 @@ class FlyBirdGame {
     ctx.rotate(wingAngle);
 
     // Primary flight feather under-layer (rear tip)
-    ctx.fillStyle = '#0d47a1';
-    ctx.strokeStyle = '#061a38';
+    ctx.fillStyle = isRedKing ? '#4a0303' : '#0d47a1';
+    ctx.strokeStyle = isRedKing ? '#2b0202' : '#061a38';
     ctx.lineWidth = 2.0;
     ctx.beginPath();
     ctx.ellipse(-12, 4, 7.5, 3.8, -0.28, 0, Math.PI * 2);
@@ -3754,17 +3884,23 @@ class FlyBirdGame {
     ctx.closePath();
 
     const wingGrad = ctx.createLinearGradient(-14, -5, 8, 5);
-    wingGrad.addColorStop(0, '#90caf9');
-    wingGrad.addColorStop(0.4, '#2196f3');
-    wingGrad.addColorStop(1, '#1565c0');
+    if (isRedKing) {
+      wingGrad.addColorStop(0, '#ff8a80');
+      wingGrad.addColorStop(0.4, '#ff1744');
+      wingGrad.addColorStop(1, '#b71c1c');
+    } else {
+      wingGrad.addColorStop(0, '#90caf9');
+      wingGrad.addColorStop(0.4, '#2196f3');
+      wingGrad.addColorStop(1, '#1565c0');
+    }
     ctx.fillStyle = wingGrad;
     ctx.fill();
     ctx.lineWidth = 2.4;
-    ctx.strokeStyle = '#061a38';
+    ctx.strokeStyle = isRedKing ? '#2b0202' : '#061a38';
     ctx.stroke();
 
     // Feather division ribs
-    ctx.strokeStyle = '#0d47a1';
+    ctx.strokeStyle = isRedKing ? '#7f0000' : '#0d47a1';
     ctx.lineWidth = 1.8;
     ctx.beginPath();
     ctx.arc(-4, 0, 5.5, 0.2, Math.PI * 0.95);
@@ -3787,10 +3923,17 @@ class FlyBirdGame {
     ctx.closePath();
 
     const upperBeakGrad = ctx.createLinearGradient(13, -2, 28, 3);
-    upperBeakGrad.addColorStop(0, '#fff176');
-    upperBeakGrad.addColorStop(0.35, '#ffb74d');
-    upperBeakGrad.addColorStop(0.8, '#fb8c00');
-    upperBeakGrad.addColorStop(1, '#e65100');
+    if (isRedKing) {
+      upperBeakGrad.addColorStop(0, '#fffde7');
+      upperBeakGrad.addColorStop(0.35, '#ffd54f');
+      upperBeakGrad.addColorStop(0.8, '#ff9800');
+      upperBeakGrad.addColorStop(1, '#d84315');
+    } else {
+      upperBeakGrad.addColorStop(0, '#fff176');
+      upperBeakGrad.addColorStop(0.35, '#ffb74d');
+      upperBeakGrad.addColorStop(0.8, '#fb8c00');
+      upperBeakGrad.addColorStop(1, '#e65100');
+    }
     ctx.fillStyle = upperBeakGrad;
     ctx.fill();
     ctx.lineWidth = 2.2;
@@ -3833,9 +3976,8 @@ class FlyBirdGame {
     ctx.fill();
     ctx.restore();
 
-    // 11. ADORABLE PEACH-PINK ROSY BLUSH CHEEK
-    // Positioned smoothly below eye and behind beak corner
-    ctx.fillStyle = 'rgba(255, 110, 155, 0.65)';
+    // 11. ADORABLE PEACH-PINK / CORAL-ROSE CHEEK BLUSH
+    ctx.fillStyle = isRedKing ? 'rgba(255, 82, 82, 0.55)' : 'rgba(255, 110, 155, 0.65)';
     ctx.beginPath();
     ctx.ellipse(5.5, 6.2, 5.5, 3.4, 0.05, 0, Math.PI * 2);
     ctx.fill();
@@ -3854,11 +3996,11 @@ class FlyBirdGame {
       ctx.fillStyle = '#ffffff';
       ctx.fill();
       ctx.lineWidth = 2.6;
-      ctx.strokeStyle = '#061a38';
+      ctx.strokeStyle = isRedKing ? '#2b0202' : '#061a38';
       ctx.stroke();
 
       // Soft ambient upper shadow on sclera (Gives true 3D cartoon volume)
-      ctx.fillStyle = 'rgba(179, 215, 245, 0.42)';
+      ctx.fillStyle = isRedKing ? 'rgba(255, 235, 238, 0.45)' : 'rgba(179, 215, 245, 0.42)';
       ctx.beginPath();
       ctx.ellipse(eyeX, eyeY - 3.8, 6.2, 3.2, 0.04, 0, Math.PI * 2);
       ctx.fill();
@@ -3872,14 +4014,20 @@ class FlyBirdGame {
       ctx.beginPath();
       ctx.ellipse(pupilX, pupilY, pupilRx, pupilRy, 0.04, 0, Math.PI * 2);
       const pupilGrad = ctx.createRadialGradient(pupilX - 1, pupilY - 1.8, 1, pupilX, pupilY, pupilRy);
-      pupilGrad.addColorStop(0, '#1a365d');
-      pupilGrad.addColorStop(0.45, '#0b162c');
-      pupilGrad.addColorStop(1, '#020617');
+      if (isRedKing) {
+        pupilGrad.addColorStop(0, '#3e0808');
+        pupilGrad.addColorStop(0.45, '#190303');
+        pupilGrad.addColorStop(1, '#020617');
+      } else {
+        pupilGrad.addColorStop(0, '#1a365d');
+        pupilGrad.addColorStop(0.45, '#0b162c');
+        pupilGrad.addColorStop(1, '#020617');
+      }
       ctx.fillStyle = pupilGrad;
       ctx.fill();
 
-      // Radiant sapphire/cyan iris crescent at bottom of pupil
-      ctx.strokeStyle = '#00e5ff';
+      // Radiant iris crescent at bottom of pupil (Molten Gold for King, Cyan for Prince)
+      ctx.strokeStyle = isRedKing ? '#ffd700' : '#00e5ff';
       ctx.lineWidth = 1.3;
       ctx.beginPath();
       ctx.arc(pupilX, pupilY + 1.6, 2.8, 0.15, Math.PI - 0.15);
@@ -3897,7 +4045,7 @@ class FlyBirdGame {
       ctx.fill();
 
       // Elegant upper lash rim line (accents the eye without crowding the forehead)
-      ctx.strokeStyle = '#061a38';
+      ctx.strokeStyle = isRedKing ? '#2b0202' : '#061a38';
       ctx.lineWidth = 2.0;
       ctx.beginPath();
       ctx.arc(eyeX, eyeY - 1.5, eyeRx - 0.5, Math.PI * 1.15, Math.PI * 1.85);
@@ -3907,7 +4055,7 @@ class FlyBirdGame {
       ctx.beginPath();
       ctx.arc(eyeX, eyeY + 1.5, 6.8, 0.18, Math.PI - 0.18);
       ctx.lineWidth = 3.0;
-      ctx.strokeStyle = '#061a38';
+      ctx.strokeStyle = isRedKing ? '#2b0202' : '#061a38';
       ctx.stroke();
 
       // Cute eyelashes
@@ -3919,75 +4067,153 @@ class FlyBirdGame {
       ctx.stroke();
     }
 
-    // 13. 3D GOLDEN ROYAL CROWN WITH VELVET BACKING & TWINKLING RUBIES
-    // Resting proudly, upright and balanced atop the bird's head dome
-    ctx.save();
-    ctx.translate(-0.5, -20.5);
-    ctx.rotate(0.04);
+    // 13. ROYAL CROWN
+    if (isRedKing) {
+      // 👑 GRAND IMPERIAL HIGH KING CROWN (5 majestic spires with tall center tower & glowing Emerald)
+      ctx.save();
+      ctx.translate(-0.5, -21.5);
+      ctx.rotate(0.04);
 
-    // Royal Crimson Velvet Cap Interior
-    ctx.fillStyle = '#b71c1c';
-    ctx.beginPath();
-    ctx.moveTo(-11, 4.0);
-    ctx.quadraticCurveTo(0, -9.5, 11, 4.0);
-    ctx.closePath();
-    ctx.fill();
-
-    // 3D Golden Crown Silhouette with 3 peaks
-    ctx.beginPath();
-    ctx.moveTo(-12, 4.0);
-    ctx.lineTo(12, 4.0);
-    ctx.lineTo(14, -8.5);
-    ctx.lineTo(6.5, -2.0);
-    ctx.lineTo(0, -13.5);
-    ctx.lineTo(-6.5, -2.0);
-    ctx.lineTo(-14, -8.5);
-    ctx.closePath();
-
-    const crownGrad = ctx.createLinearGradient(0, -13.5, 0, 5);
-    crownGrad.addColorStop(0, '#fffde7');
-    crownGrad.addColorStop(0.2, '#fff59d');
-    crownGrad.addColorStop(0.6, '#ffca28');
-    crownGrad.addColorStop(1, '#ff8f00');
-    ctx.fillStyle = crownGrad;
-    ctx.fill();
-    ctx.lineWidth = 2.4;
-    ctx.strokeStyle = '#532f05';
-    ctx.lineJoin = 'round';
-    ctx.stroke();
-
-    // Pearl Band Along Crown Base
-    ctx.fillStyle = '#ffffff';
-    [-8, -4, 0, 4, 8].forEach(px => {
+      // Imperial Crimson Velvet Cap Interior
+      ctx.fillStyle = '#7f0000';
       ctx.beginPath();
-      ctx.arc(px, 2.2, 1.4, 0, Math.PI * 2);
+      ctx.moveTo(-12, 4.0);
+      ctx.quadraticCurveTo(0, -11, 12, 4.0);
+      ctx.closePath();
       ctx.fill();
-    });
 
-    // 3 Glowing Faceted Rubies on Spires
-    const rubyTips = [
-      { x: -14, y: -8.5 },
-      { x: 0, y: -13.5 },
-      { x: 14, y: -8.5 }
-    ];
-
-    rubyTips.forEach((tip, idx) => {
+      // 5-Spire Grand Golden Silhouette
       ctx.beginPath();
-      ctx.arc(tip.x, tip.y, 2.8, 0, Math.PI * 2);
-      ctx.fillStyle = '#e53935';
+      ctx.moveTo(-13, 4.0);
+      ctx.lineTo(13, 4.0);
+      ctx.lineTo(15, -9.0);   // Outer right spire
+      ctx.lineTo(9.5, -2.5);
+      ctx.lineTo(6.5, -12.0);  // Inner right spire
+      ctx.lineTo(2.5, -3.5);
+      ctx.lineTo(0, -15.5);    // TALL CENTER IMPERIAL SPIRE
+      ctx.lineTo(-2.5, -3.5);
+      ctx.lineTo(-6.5, -12.0); // Inner left spire
+      ctx.lineTo(-9.5, -2.5);
+      ctx.lineTo(-15, -9.0);   // Outer left spire
+      ctx.closePath();
+
+      const kingCrownGrad = ctx.createLinearGradient(0, -15.5, 0, 5);
+      kingCrownGrad.addColorStop(0, '#fffde7');
+      kingCrownGrad.addColorStop(0.2, '#fff176');
+      kingCrownGrad.addColorStop(0.6, '#ffc107');
+      kingCrownGrad.addColorStop(1, '#ff8f00');
+      ctx.fillStyle = kingCrownGrad;
       ctx.fill();
-      ctx.lineWidth = 1.3;
-      ctx.strokeStyle = '#3e0606';
+      ctx.lineWidth = 2.4;
+      ctx.strokeStyle = '#4e2602';
+      ctx.lineJoin = 'round';
       ctx.stroke();
 
-      const twinkle = Math.sin(this.frame * 0.16 + idx * 2);
-      ctx.fillStyle = '#ffffff';
-      ctx.beginPath();
-      ctx.arc(tip.x, tip.y, twinkle > 0.4 ? 1.6 : 1.0, 0, Math.PI * 2);
-      ctx.fill();
-    });
+      // Gem Band Along Crown Base (Alternating Emeralds & Pearls)
+      [-9, -4.5, 0, 4.5, 9].forEach((px, idx) => {
+        ctx.beginPath();
+        ctx.arc(px, 2.2, 1.4, 0, Math.PI * 2);
+        ctx.fillStyle = idx % 2 === 0 ? '#00e676' : '#ffffff';
+        ctx.fill();
+      });
 
-    ctx.restore();
+      // 5 Glowing Gems on Spires
+      const spireTips = [
+        { x: -15, y: -9.0, col: '#ff1744', r: 2.4 },
+        { x: -6.5, y: -12.0, col: '#00e5ff', r: 2.6 },
+        { x: 0, y: -15.5, col: '#00e676', r: 3.2 }, // Central Grand Emerald
+        { x: 6.5, y: -12.0, col: '#00e5ff', r: 2.6 },
+        { x: 15, y: -9.0, col: '#ff1744', r: 2.4 }
+      ];
+
+      spireTips.forEach((tip, idx) => {
+        ctx.beginPath();
+        ctx.arc(tip.x, tip.y, tip.r, 0, Math.PI * 2);
+        ctx.fillStyle = tip.col;
+        ctx.fill();
+        ctx.lineWidth = 1.2;
+        ctx.strokeStyle = '#2b0202';
+        ctx.stroke();
+
+        const twinkle = Math.sin(this.frame * 0.16 + idx * 1.8);
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        ctx.arc(tip.x, tip.y, twinkle > 0.3 ? 1.4 : 0.8, 0, Math.PI * 2);
+        ctx.fill();
+      });
+
+      ctx.restore();
+    } else {
+      // 👑 3D GOLDEN ROYAL PRINCE CROWN (3 peaks & rubies)
+      ctx.save();
+      ctx.translate(-0.5, -20.5);
+      ctx.rotate(0.04);
+
+      // Royal Crimson Velvet Cap Interior
+      ctx.fillStyle = '#b71c1c';
+      ctx.beginPath();
+      ctx.moveTo(-11, 4.0);
+      ctx.quadraticCurveTo(0, -9.5, 11, 4.0);
+      ctx.closePath();
+      ctx.fill();
+
+      // 3D Golden Crown Silhouette with 3 peaks
+      ctx.beginPath();
+      ctx.moveTo(-12, 4.0);
+      ctx.lineTo(12, 4.0);
+      ctx.lineTo(14, -8.5);
+      ctx.lineTo(6.5, -2.0);
+      ctx.lineTo(0, -13.5);
+      ctx.lineTo(-6.5, -2.0);
+      ctx.lineTo(-14, -8.5);
+      ctx.closePath();
+
+      const crownGrad = ctx.createLinearGradient(0, -13.5, 0, 5);
+      crownGrad.addColorStop(0, '#fffde7');
+      crownGrad.addColorStop(0.2, '#fff59d');
+      crownGrad.addColorStop(0.6, '#ffca28');
+      crownGrad.addColorStop(1, '#ff8f00');
+      ctx.fillStyle = crownGrad;
+      ctx.fill();
+      ctx.lineWidth = 2.4;
+      ctx.strokeStyle = '#532f05';
+      ctx.lineJoin = 'round';
+      ctx.stroke();
+
+      // Pearl Band Along Crown Base
+      ctx.fillStyle = '#ffffff';
+      [-8, -4, 0, 4, 8].forEach(px => {
+        ctx.beginPath();
+        ctx.arc(px, 2.2, 1.4, 0, Math.PI * 2);
+        ctx.fill();
+      });
+
+      // 3 Glowing Faceted Rubies on Spires
+      const rubyTips = [
+        { x: -14, y: -8.5 },
+        { x: 0, y: -13.5 },
+        { x: 14, y: -8.5 }
+      ];
+
+      rubyTips.forEach((tip, idx) => {
+        ctx.beginPath();
+        ctx.arc(tip.x, tip.y, 2.8, 0, Math.PI * 2);
+        ctx.fillStyle = '#e53935';
+        ctx.fill();
+        ctx.lineWidth = 1.3;
+        ctx.strokeStyle = '#3e0606';
+        ctx.stroke();
+
+        const twinkle = Math.sin(this.frame * 0.16 + idx * 2);
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        ctx.arc(tip.x, tip.y, twinkle > 0.4 ? 1.6 : 1.0, 0, Math.PI * 2);
+        ctx.fill();
+      });
+
+      ctx.restore();
+    }
+
     ctx.restore();
   }
 
